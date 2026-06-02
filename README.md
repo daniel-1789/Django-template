@@ -1,78 +1,87 @@
-# Flask API Template
+# Django API Template
 
-A minimal starting point for a Python JSON API built on **Flask**, **SQLAlchemy 2.x**, **Alembic**, and **Pydantic v2**, with interactive **OpenAPI docs** (Swagger UI / ReDoc) generated from the Pydantic schemas via **[Spectree](https://github.com/0b01001011/spectree)**. Ships with two interchangeable backends — **SQLite** (a single local file, zero setup, the default) and **MySQL** (networked) — selected by one env var. See [Choosing a database](#choosing-a-database). Swap the driver/URL for Postgres/etc. when a project outgrows them.
+A minimal starting point for a Python JSON API built on **Django 6**, **Django REST Framework**, and Django's built-in **ORM + migrations**, with interactive **OpenAPI docs** (Swagger UI / ReDoc) generated from the DRF serializers via **[drf-spectacular](https://github.com/tfranzel/drf-spectacular)**. Ships with two interchangeable backends — **SQLite** (a single local file, zero setup, the default) and **MySQL** (networked) — selected by one env var. See [Choosing a database](#choosing-a-database). Swap the engine/URL for Postgres/etc. when a project outgrows them.
 
-The endpoints in `app/main.py` (`/items`, `/manufacturers`) are scaffolding — delete them and replace with real domain models. The plumbing (app factory, engine, request-scoped session, Alembic wiring, settings) is the part worth keeping.
+The endpoints in `catalog/` (`/items`, `/manufacturers`) are scaffolding — delete them and replace with real domain models. The plumbing (project settings, DRF wiring, env-driven config, the `DATABASE_URL` switch, the admin) is the part worth keeping.
+
+> **Coming from the Flask template?** This is the same API, the same data model, and the same two-backend story — re-expressed in Django idioms. SQLAlchemy → the Django ORM, Alembic → Django migrations, Pydantic + Spectree → DRF serializers + drf-spectacular. Plus the Django admin for free.
 
 ## Where to go
 
-Once the server is up (`flask --app app run --debug`, default port `5000`):
+Once the server is up (`python manage.py runserver`, default port `8000`):
 
 | URL | What |
 | --- | --- |
-| [`/apidoc/swagger`](http://127.0.0.1:5000/apidoc/swagger) | **Swagger UI** — interactive docs, click-to-try requests. |
-| [`/apidoc/redoc`](http://127.0.0.1:5000/apidoc/redoc) | **ReDoc** — clean, readable reference. |
-| [`/apidoc/scalar`](http://127.0.0.1:5000/apidoc/scalar) | **Scalar** — modern docs UI, another flavor. |
-| [`/apidoc/openapi.json`](http://127.0.0.1:5000/apidoc/openapi.json) | Raw **OpenAPI spec** (feed it to codegen, Postman, etc.). |
-| [`/healthz`](http://127.0.0.1:5000/healthz) | Liveness check — `{"status": "ok"}`. |
+| [`/apidoc/swagger`](http://127.0.0.1:8000/apidoc/swagger) | **Swagger UI** — interactive docs, click-to-try requests. |
+| [`/apidoc/redoc`](http://127.0.0.1:8000/apidoc/redoc) | **ReDoc** — clean, readable reference. |
+| [`/apidoc/openapi.json`](http://127.0.0.1:8000/apidoc/openapi.json) | Raw **OpenAPI spec** (feed it to codegen, Postman, etc.). |
+| [`/admin/`](http://127.0.0.1:8000/admin/) | **Django admin** — CRUD UI for the models (needs a superuser; see [Admin](#admin)). |
+| [`/healthz`](http://127.0.0.1:8000/healthz) | Liveness check — `{"status": "ok"}`. |
 
-All three doc UIs are generated from the same Pydantic schemas — pick whichever you like. See [Endpoints](#endpoints) for the API routes themselves.
+Both doc UIs are generated from the same DRF serializers — pick whichever you like. See [Endpoints](#endpoints) for the API routes themselves.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `app/__init__.py` | App factory (`create_app`), blueprint registration, JSON error handlers, docs mount. |
-| `app/main.py` | Routes (a Flask blueprint), each annotated with `@api.validate` for validation + docs. |
-| `app/extensions.py` | The Spectree (`api`) instance that drives validation and the OpenAPI docs. |
-| `app/database.py` | Engine, session factory, request-scoped `get_session`, `Base`. |
-| `app/models.py` | SQLAlchemy ORM models. |
-| `app/schemas.py` | Pydantic request/response models (validation + serialization). |
-| `app/crud.py` | DB ops, kept separate from route handlers. |
-| `app/config.py` | `pydantic-settings`, reads `.env`. |
-| `alembic/` | Migration env + `versions/`. |
-| `alembic.ini` | Alembic config (URL injected from `app.config`). |
+| `manage.py` | Django's CLI entrypoint (`migrate`, `runserver`, `createsuperuser`, …). |
+| `config/settings.py` | Settings: env-driven config, installed apps, `DATABASE_URL` parsing, DRF + spectacular. |
+| `config/urls.py` | Root URL routing: admin, the docs, and `include()` of the app's routes. |
+| `config/wsgi.py` / `asgi.py` | Server entrypoints (`gunicorn config.wsgi`). |
+| `config/__init__.py` | PyMySQL-as-MySQLdb shim (keeps the MySQL driver pure-Python). |
+| `catalog/models.py` | Django ORM models. |
+| `catalog/serializers.py` | DRF serializers (validation + serialization, drive the docs). |
+| `catalog/views.py` | DRF viewsets + the health view. Thin; query logic lives on the queryset. |
+| `catalog/urls.py` | App routes (a DRF router) + `/healthz`. |
+| `catalog/admin.py` | Admin registrations for the models. |
+| `catalog/migrations/` | Generated migrations (checked in). |
 | `requirements.txt` | Pinned dependencies. |
 | `.env.example` | Copy to `.env` and edit. |
 
 ## Choosing a database
 
-The backend is selected entirely by `DATABASE_URL` in `.env` — there is **one** switch and nothing else changes. The code adapts to the dialect automatically (engine pooling in `app/database.py`, batch migrations in `alembic/env.py`).
+The backend is selected entirely by `DATABASE_URL` in `.env` — there is **one** switch and nothing else changes. `config/settings.py` parses it with [django-environ](https://django-environ.readthedocs.io/), which picks the right `ENGINE` from the URL scheme.
 
 | | SQLite (default) | MySQL |
 | --- | --- | --- |
-| `DATABASE_URL` | `sqlite:///./flask_app.db` | `mysql+pymysql://root:root@127.0.0.1:3306/flask_app` |
+| `DATABASE_URL` | `sqlite:///./django_app.db` | `mysql://root:root@127.0.0.1:3306/django_app` |
 | Driver | stdlib `sqlite3` (no install) | `PyMySQL` (in `requirements.txt`) |
 | Setup | none — a file is created on first migration | install + run a MySQL server |
 | Good for | quick local dev, tests, demos | shared/staging/prod-like environments |
 
-**To switch backends, change that one line in `.env` and re-run `alembic upgrade head`.** The MySQL driver ships in `requirements.txt`, so no reinstall is needed. The two backends are separate stores — data does not carry over between them.
+**To switch backends, change that one line in `.env` and re-run `python manage.py migrate`.** The MySQL driver ships in `requirements.txt`, so no reinstall is needed. The two backends are separate stores — data does not carry over between them.
 
-A few dialect details the template already handles for you:
+A few details the template already handles for you:
 
-- **SQLite path:** three slashes (`sqlite:///./flask_app.db`) is relative to the working directory; four slashes is an absolute path. `*.db` files are gitignored.
-- **SQLite + Alembic:** SQLite can't `ALTER` most columns, so `alembic/env.py` turns on `render_as_batch` automatically when the URL is SQLite (Alembic rebuilds the table behind the scenes). MySQL alters in place.
-- **Pooling:** `pool_pre_ping` is used for MySQL (drops stale network connections); SQLite skips it and sets `check_same_thread=False` so a connection can move across the dev server's request threads.
+- **SQLite path:** three slashes (`sqlite:///./django_app.db`) is relative to the working directory; four slashes is an absolute path. `*.db` files are gitignored.
+- **Pure-Python MySQL:** Django's MySQL backend normally wants `mysqlclient` (a C extension). `config/__init__.py` installs `PyMySQL` as a drop-in (`pymysql.install_as_MySQLdb()`), so MySQL works with no build toolchain — the same choice the SQLite-by-default story makes elsewhere.
+- **Migrations are dialect-agnostic.** Django generates and runs the same migrations against either backend; you don't manage batch/ALTER quirks by hand.
 
 ## Setup
 
 ### 1. Python venv
 
 ```shell
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure the database
+### 2. Configure
 
 ```shell
 cp .env.example .env
 ```
 
-`.env.example` ships with SQLite active and MySQL commented out. Pick one:
+`.env.example` ships with SQLite active and MySQL commented out. It also holds Django's `SECRET_KEY` and `DEBUG`. Generate a real secret key for anything that leaves your machine:
 
-**Option A — SQLite (default; no server to install).** Nothing to edit — the copied `.env` already points at `sqlite:///./flask_app.db`, and the file is created when you run migrations. Skip to step 3.
+```shell
+python -c "from django.core.management.utils import get_random_secret_key as k; print(k())"
+```
+
+Pick a database:
+
+**Option A — SQLite (default; no server to install).** Nothing to edit — the copied `.env` already points at `sqlite:///./django_app.db`, and the file is created when you migrate. Skip to step 3.
 
 **Option B — MySQL.** In `.env`, comment out the SQLite line and uncomment the MySQL one. Then install and start a local MySQL server:
 
@@ -81,55 +90,80 @@ brew install mysql
 brew services start mysql
 ```
 
-Create the database and (optionally) a dedicated user. The defaults in `.env.example` assume the root account with password `root` — fine for local dev, change for anything real:
+Create the database (the defaults assume the root account with password `root` — fine for local dev, change for anything real):
 
 ```shell
-mysql -uroot -e "CREATE DATABASE flask_app;"
+mysql -uroot -e "CREATE DATABASE django_app;"
 mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'root';"
 ```
 
 Edit the MySQL `DATABASE_URL` in `.env` if your user/password/port differs. The format is:
 
 ```
-mysql+pymysql://<user>:<password>@<host>:<port>/<database>
+mysql://<user>:<password>@<host>:<port>/<database>
 ```
 
 ### 3. Run migrations
 
 ```shell
-alembic upgrade head
+python manage.py migrate
 ```
 
-This creates the `items` and `manufacturers` tables. The migrations are checked in under `alembic/versions/`.
+This applies Django's built-in tables (admin, auth, sessions) plus the `items` and `manufacturers` tables from `catalog/migrations/`.
 
-To generate a new migration after editing models:
+After editing models, generate a new migration and apply it:
 
 ```shell
-alembic revision --autogenerate -m "describe your change"
-alembic upgrade head
+python manage.py makemigrations
+python manage.py migrate
 ```
 
-Revision IDs are zero-padded and sequential (`0001`, `0002`, `0003`, …) rather than Alembic's default random hex, so `ls alembic/versions/` reads in history order. This is handled by the `use_sequential_rev_ids` hook in `alembic/env.py` (it picks the next number above the highest existing numeric revision).
+Migrations are checked in under `catalog/migrations/` — commit them alongside the model changes that produced them.
 
 ### 4. Run the API
 
 ```shell
-flask --app app run --debug      # dev server with reloader, on http://127.0.0.1:5000
+python manage.py runserver          # dev server with auto-reload, on http://127.0.0.1:8000
 ```
 
 For a production-style run, use the bundled WSGI server (gunicorn):
 
 ```shell
-gunicorn app:app                 # serves the create_app() instance from app/__init__.py
+gunicorn config.wsgi                # serves the application from config/wsgi.py
 ```
 
-- Swagger UI: <http://127.0.0.1:5000/apidoc/swagger>
-- ReDoc: <http://127.0.0.1:5000/apidoc/redoc>
-- Scalar: <http://127.0.0.1:5000/apidoc/scalar>
-- Raw OpenAPI spec: <http://127.0.0.1:5000/apidoc/openapi.json>
-- Health: <http://127.0.0.1:5000/healthz>
+- Swagger UI: <http://127.0.0.1:8000/apidoc/swagger>
+- ReDoc: <http://127.0.0.1:8000/apidoc/redoc>
+- Raw OpenAPI spec: <http://127.0.0.1:8000/apidoc/openapi.json>
+- Admin: <http://127.0.0.1:8000/admin/>
+- Health: <http://127.0.0.1:8000/healthz>
 
-The docs are generated by Spectree from the `@api.validate(...)` decorators on each route (`app/main.py`), which read the Pydantic schemas in `app/schemas.py`. Add a route + decorator and it shows up in Swagger automatically — the FastAPI experience, on Flask.
+The docs are generated by drf-spectacular from the DRF serializers in `catalog/serializers.py` and the viewsets in `catalog/views.py`. Add a serializer + viewset and it shows up in Swagger automatically.
+
+## Admin
+
+Django's admin is wired up out of the box (`catalog/admin.py` registers both models). Create a login, then browse to `/admin/`:
+
+```shell
+python manage.py createsuperuser
+```
+
+It's a full CRUD UI over your data with search and filters — one of the main reasons to reach for Django over a micro-framework. Lock it down (or remove `django.contrib.admin`) before exposing anything publicly.
+
+## Debugging in PyCharm
+
+A ready-made run configuration ships in `.idea/runConfigurations/`, so you can debug with PyCharm's native debugger straight away:
+
+1. Pick **`runserver (debug)`** in the Run/Debug dropdown (top-right). If it isn't there yet, **File → Reload All from Disk**.
+2. Set a breakpoint (click the gutter beside a line in, say, `catalog/views.py`).
+3. **Run → Debug** (the green bug icon, or `⌃D`).
+4. Hit an endpoint (`curl http://127.0.0.1:8000/items` or a browser) — execution stops at the breakpoint with the full frames/variables/console.
+
+Prefer to build it by hand? **Run → Edit Configurations → `+` → Python**, set *Script path* to `manage.py`, *Parameters* to `runserver --noreload`, working directory to the project root, and the interpreter to your `.venv`. That's the same config the shipped XML defines.
+
+> **Why `--noreload`?** Django's dev server runs your code in a child process so it can auto-restart on file changes. PyCharm's debugger attaches to the *parent*, so without `--noreload` your breakpoints silently never hit. `--noreload` collapses it to one process — breakpoints always work. The trade-off is no auto-reload, so restart the debugger after editing code.
+
+On **PyCharm Professional** you can instead enable Django support (**Settings → Languages & Frameworks → Django**: project root, `config/settings.py`, `manage.py`) and add a **Django Server** run configuration. It debugs correctly *and* keeps auto-reload, launched the same way via Run → Debug.
 
 ## Data model
 
@@ -138,7 +172,7 @@ Two tables with a foreign key, to illustrate a relationship:
 - **`manufacturers`** — `id`, `name` (unique), `state` (2-letter code).
 - **`items`** — `id`, `name` (unique), `description`, `price`, `created_at`, plus `manufacturer_id`, a non-null FK into `manufacturers`.
 
-Every item belongs to one manufacturer. `GET /items` and `GET /items/{id}` return the item's columns **plus** the manufacturer nested in (`{..., "manufacturer": {"id", "name", "state"}}`), eager-loaded in `app/crud.py` to avoid N+1 queries. `POST /items` requires a valid `manufacturer_id` (400 if it doesn't exist); create manufacturers first via `POST /manufacturers`.
+Every item belongs to one manufacturer. `GET /items` and `GET /items/{id}` return the item's columns **plus** the manufacturer nested in (`{..., "manufacturer": {"id", "name", "state"}}`), eager-loaded with `select_related` in `catalog/views.py` to avoid N+1 queries. `POST /items` requires a valid `manufacturer_id` (400 if it doesn't exist — DRF's `PrimaryKeyRelatedField` validates it); create manufacturers first via `POST /manufacturers`. Deleting a manufacturer that still has items is blocked (`on_delete=PROTECT`).
 
 ## Endpoints
 
@@ -152,7 +186,7 @@ Every item belongs to one manufacturer. `GET /items` and `GET /items/{id}` retur
 | `GET` | `/manufacturers/<id>` | One manufacturer, or 404. |
 | `POST` | `/manufacturers` | Create a manufacturer (validates body). |
 
-Request validation (body + query) is handled by Spectree from the Pydantic schemas: a bad body or query param returns `422` with Pydantic's error list (Spectree's shape). Business errors raised with `abort()` (400/404) return `{"detail": "message"}`, wired up in `app/__init__.py`.
+Routes are registered with a DRF router (`catalog/urls.py`) configured with `trailing_slash=False`, so paths read `/items` and `/items/1` (no trailing slash), matching the Flask template. Request validation is handled by the serializers: a bad body returns `400` with DRF's field-keyed error list (e.g. `{"price": ["Ensure this value is greater than or equal to 0."]}`), and a missing row returns `404` (`{"detail": "No Item matches the given query."}`).
 
 ## Try it
 
@@ -160,21 +194,21 @@ A manufacturer must exist before an item can reference it:
 
 ```shell
 # 1. create a manufacturer, note its "id" in the response
-curl -X POST http://127.0.0.1:5000/manufacturers \
+curl -X POST http://127.0.0.1:8000/manufacturers \
   -H 'Content-Type: application/json' \
   -d '{"name": "Acme Corp", "state": "CA"}'
 
 # 2. create an item pointing at that manufacturer
-curl -X POST http://127.0.0.1:5000/items \
+curl -X POST http://127.0.0.1:8000/items \
   -H 'Content-Type: application/json' \
   -d '{"name": "Widget", "description": "a thing", "price": 9.99, "manufacturer_id": 1}'
 
-curl http://127.0.0.1:5000/items     # each item includes its nested manufacturer
-curl http://127.0.0.1:5000/items/1
-curl 'http://127.0.0.1:5000/items?search=wid'   # case-insensitive name filter
+curl http://127.0.0.1:8000/items     # each item includes its nested manufacturer
+curl http://127.0.0.1:8000/items/1
+curl 'http://127.0.0.1:8000/items?search=wid'   # case-insensitive name filter
 ```
 
-Both list endpoints (`GET /items`, `GET /manufacturers`) take an optional `?search=` query param that does a case-insensitive `LIKE` on `name`. Literal `%` and `_` in the search are escaped, so they match themselves rather than acting as wildcards. Omitting it (or passing blank) returns everything.
+Both list endpoints (`GET /items`, `GET /manufacturers`) take an optional `?search=` query param that does a case-insensitive `LIKE` on `name`. Django's `__icontains` escapes `%` and `_` in the search term, so they match themselves rather than acting as wildcards. Omitting it (or passing blank) returns everything.
 
 Or just run `./seed.sh` (below), which does all of this for you.
 
@@ -183,7 +217,7 @@ Or just run `./seed.sh` (below), which does all of this for you.
 `seed.sh` POSTs a few manufacturers and then items that reference them (so the foreign keys line up) to the running API, giving you data to look at. The API must be running and migrated first.
 
 ```shell
-./seed.sh                                  # seeds http://127.0.0.1:5000 (Flask's default)
+./seed.sh                                  # seeds http://127.0.0.1:8000 (Django's default)
 BASE_URL=http://127.0.0.1:8099 ./seed.sh   # different host/port
 ```
 
@@ -192,16 +226,16 @@ Because it goes through HTTP, it works identically against SQLite or MySQL. Edit
 ## Using this as a starting point
 
 1. Clone or copy this directory into a new repo.
-2. **Rename the database** — see below. Don't leave it as `flask_app`, or every project off this template ends up sharing one database in your local MySQL.
-3. Rename the `Item` model in `app/models.py` and the matching schemas/routes to your domain.
-4. Drop the files in `alembic/versions/` and run `alembic revision --autogenerate -m "initial"` to regenerate against your new models.
-5. Want Postgres instead? Replace `PyMySQL` with `psycopg[binary]` in `requirements.txt` and use `postgresql+psycopg://...` in `DATABASE_URL`. Nothing else changes.
+2. **Rename the database** — see below. Don't leave it as `django_app`, or every project off this template ends up sharing one database in your local MySQL.
+3. Rename the `Item`/`Manufacturer` models in `catalog/models.py` (and the matching serializers/views) to your domain — or rename the whole `catalog` app.
+4. Delete `catalog/migrations/0001_initial.py` and run `python manage.py makemigrations` to regenerate against your new models.
+5. Want Postgres instead? Replace `PyMySQL` with `psycopg[binary]` in `requirements.txt` and use `postgres://...` in `DATABASE_URL`. django-environ maps it to Django's Postgres backend; nothing else changes.
 
 ### Renaming the database
 
-> On **SQLite** there's nothing to rename: just point `DATABASE_URL` at a different filename (`sqlite:///./widgets.db`) and run `alembic upgrade head`. The steps below are for **MySQL**.
+> On **SQLite** there's nothing to rename: just point `DATABASE_URL` at a different filename (`sqlite:///./widgets.db`) and run `python manage.py migrate`. The steps below are for **MySQL**.
 
-The template ships with a database named `flask_app`. For a real project, pick a name that matches the repo (e.g. `widgets`, `invoicing`) so your local MySQL doesn't turn into a junk drawer.
+The template ships with a database named `django_app`. For a real project, pick a name that matches the repo (e.g. `widgets`, `invoicing`) so your local MySQL doesn't turn into a junk drawer.
 
 1. **Create the new database in MySQL:**
 
@@ -212,52 +246,45 @@ The template ships with a database named `flask_app`. For a real project, pick a
 2. **Update `.env`** — change the last path segment of `DATABASE_URL`:
 
    ```
-   DATABASE_URL=mysql+pymysql://root:root@127.0.0.1:3306/widgets
+   DATABASE_URL=mysql://root:root@127.0.0.1:3306/widgets
    ```
 
 3. **Update `.env.example`** to match, so anyone else cloning the repo gets the right default.
 
-4. **Update the default in `app/config.py`** — the `database_url` field's default string is the fallback when `.env` is missing. Keep it consistent so the same name appears everywhere.
-
-5. **Run migrations against the new database:**
+4. **Run migrations against the new database:**
 
    ```shell
-   alembic upgrade head
+   python manage.py migrate
    ```
 
-6. **(Optional) Drop the old `flask_app` database** once you've confirmed everything works against the new one:
-
-   ```shell
-   mysql -uroot -proot -e "DROP DATABASE flask_app;"
-   ```
-
-That's it — three places to edit (`.env`, `.env.example`, `app/config.py`) plus the `CREATE DATABASE`. The Alembic config doesn't need touching; it reads the URL from `app.config` and follows along automatically.
+The `default=` fallback for `DATABASE_URL` in `config/settings.py` is SQLite, so the only places the MySQL name appears are `.env` and `.env.example`.
 
 ## Managing dependencies
 
-When you `pip install` something new during development, freeze the lockfile so the next clone reproduces your environment:
+`requirements.txt` is a curated list of the direct dependencies, pinned to exact versions. When you `pip install` something new during development, add it (with its version) so the next clone reproduces your environment:
 
 ```shell
 pip install <package>
-pip freeze > requirements.txt
+pip show <package> | grep -i version    # grab the version to pin
 ```
 
-`pip freeze` writes every package in the active venv with exact versions. Make sure the venv is activated first (`source venv/bin/activate`) — otherwise you'll capture your system Python's packages instead.
+Add the `package==version` line to `requirements.txt`. (Or `pip freeze > requirements.txt` if you'd rather pin the full transitive tree — just activate the venv first so you capture the right packages.)
 
 To upgrade a pinned package later:
 
 ```shell
 pip install --upgrade <package>
-pip freeze > requirements.txt
 ```
+
+…then bump its line in `requirements.txt`.
 
 ## Design notes
 
-- **App factory.** `app/__init__.py` builds the app in `create_app()` — registers the blueprint, wires the request-scoped session teardown, and installs JSON error handlers. A module-level `app = create_app()` is exposed so `flask --app app run` and `gunicorn app:app` both find it.
-- **One settings object.** `app/config.py` is the single source for env-driven config; both the app and Alembic import it. Don't read env vars elsewhere. `DATABASE_URL` is the only knob that selects MySQL vs SQLite.
-- **Sessions per request.** `get_session()` (in `app/database.py`) lazily opens one `Session` per request, stashed on Flask's `g`, and a `teardown_appcontext` handler closes it when the request ends. Don't share sessions across requests.
-- **Dialect adaptation lives in two places.** `app/database.py` picks engine options per dialect (pooling vs `check_same_thread`) and turns on SQLite foreign-key enforcement (`PRAGMA foreign_keys=ON`, which SQLite otherwise ignores; MySQL/InnoDB enforces natively). `alembic/env.py` enables batch migrations for SQLite. Everything else — models, schemas, CRUD, routes — is backend-agnostic.
-- **Eager-load relationships.** Reads of `items` use `selectinload(Item.manufacturer)` so the related row is fetched in one extra query rather than N. Hand-written migrations that alter a table use `op.batch_alter_table` for SQLite compatibility.
-- **Named constraints via a naming convention.** `Base.metadata` sets a `naming_convention` (`app/database.py`) so every index/FK/unique/check constraint gets a deterministic name. SQLite's batch migrations *require* named constraints (autogenerate otherwise emits `None` and fails with "Constraint must have a name"), and named constraints can be dropped by the same name they were created under. Set this before your first migration on a new project.
-- **Pydantic + Spectree for validation, serialization, and docs.** `app/schemas.py` defines request models (`*Create`, `SearchQuery`) and response models (`*Read`, `from_attributes=True`). The `@api.validate(...)` decorator on each route (Spectree, configured in `app/extensions.py`) validates incoming requests against those schemas, exposes validated input on `request.context`, and generates the OpenAPI spec + Swagger UI. Routes stay thin: read `request.context` → call `crud` → dump. Request validation failures surface as `422` automatically.
-- **CRUD module, not fat routes.** `app/crud.py` keeps DB logic out of route handlers so routes stay thin and testable.
+- **Env-driven settings, one switch.** `config/settings.py` is the single source for config; django-environ reads `.env` and parses typed values. `DATABASE_URL` is the only knob that selects MySQL vs SQLite — `env.db()` turns it into Django's `DATABASES` dict. Don't read `os.environ` elsewhere.
+- **Pure-Python MySQL driver.** `config/__init__.py` installs PyMySQL as `MySQLdb` so the MySQL backend needs no C build toolchain. It's a no-op under SQLite, so it runs unconditionally and early (before Django opens a connection).
+- **Thin views, query logic on the queryset.** The viewsets in `catalog/views.py` are `ListModelMixin + RetrieveModelMixin + CreateModelMixin` (list/retrieve/create only — no update/destroy, matching the Flask template). The `?search=` filter and `select_related` eager-loading live on `get_queryset`, keeping the views declarative.
+- **Serializers do validation, serialization, and docs.** `catalog/serializers.py` mirrors the Flask Pydantic schemas: `ManufacturerSerializer` is reused both standalone and nested inside `ItemSerializer`. In `ItemSerializer`, `manufacturer` is the nested read-only object and `manufacturer_id` is the writable FK (both pointing at the same model field), so a write validates the id exists — unknown id → 400 — and a read echoes both back, matching the Flask payload shape exactly.
+- **Eager-load relationships.** Item reads use `select_related("manufacturer")` so the related row comes back in the same query (a JOIN) rather than one query per item. The admin's `ItemAdmin` does the same with `list_select_related`.
+- **drf-spectacular for OpenAPI.** The schema is generated from the serializers + viewsets. `python manage.py spectacular --validate` checks it produces a clean spec; the `?search=` param is documented via `@extend_schema_view` in `catalog/views.py`.
+- **The admin is included on purpose.** `django.contrib.admin` and the `catalog/admin.py` registrations give a CRUD UI for free — the headline Django feature. Remove the app and the registration if you don't want it.
+- **`description` is an empty string, not null.** Following Django's convention for text fields (`blank=True, default=""`), an omitted item description comes back as `""` rather than `null`. This is the one intentional payload difference from the Flask template (which used `None`).

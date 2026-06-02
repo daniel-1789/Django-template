@@ -4,16 +4,16 @@
 # items' foreign keys.
 #
 # Usage:
-#   ./seed.sh                          # seeds http://127.0.0.1:5000 (Flask's default)
+#   ./seed.sh                          # seeds http://127.0.0.1:8000 (Django's default)
 #   BASE_URL=http://127.0.0.1:8099 ./seed.sh
 #
-# The API must already be running (flask --app app run) and migrated
-# (alembic upgrade head). This hits the HTTP endpoints, so it works the same
+# The API must already be running (python manage.py runserver) and migrated
+# (python manage.py migrate). This hits the HTTP endpoints, so it works the same
 # whether the backend is SQLite or MySQL.
 
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-http://127.0.0.1:5000}"
+BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 
 post_json() {  # post_json <url> <json-body>
   curl -fsS -X POST "$1" -H 'Content-Type: application/json' -d "$2"
@@ -26,7 +26,7 @@ json_id() {  # read JSON on stdin, print its "id"
 # Fail early with a clear message if the API isn't up.
 if ! curl -fsS "${BASE_URL}/healthz" >/dev/null 2>&1; then
   echo "Error: API not reachable at ${BASE_URL}." >&2
-  echo "Start it first:  flask --app app run" >&2
+  echo "Start it first:  python manage.py runserver" >&2
   exit 1
 fi
 
